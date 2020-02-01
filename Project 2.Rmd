@@ -1,0 +1,317 @@
+---
+title: "A Study on the Relationship between Class Type and Math Scores"
+author: "STA 207 Project STAR II, Jan 31, 2020"
+geometry: "left=1in,right=1in,top=1in,bottom=1in"
+output:
+  pdf_document: 
+    fig_caption: yes
+    fig_crop: no
+---
+
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 18px;
+  }
+
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE,message=FALSE,warning=FALSE,fig.align = 'center',out.width = '\\textwidth')
+```
+***
+Group ID: 5\
+Libin Feng: Summary(minor), Model Description and Notation, Causal, RMD Formatting, Visualization\
+Miao Hu: Introduction, Summary(main), Diagnostics, RMD Formatting\
+Huachao Lin: Tests, Model Diagnostics and Sensitivity Analysis\
+Roger Zhou: Discussion, Statistical Analysis, Causal Inference, Conclusion, Wordings and Logics\
+Github repo link: https://github.com/miaohu2019/STA-207-Project-2.git
+
+***
+```{r }
+# load and preprocess data
+library(car)
+library(dplyr)
+library("foreign")
+stu = read.spss("STAR_Students.sav", to.data.frame = TRUE)
+
+# preprocess data
+# filter out related variables 
+var_na = c(
+  'stdntid', 'gender', 'race', 'FLAGSG1', 'g1schid', 'g1surban', 'g1classtype',
+  'g1tchid', 'g1tgen', 'g1trace', 'g1thighdegree', 'g1tcareer', 'g1tyears', 'g1tmathss' 
+  
+)
+data = stu[var_na]
+```
+```{r}
+# filter out complete cases for teachers and student cases
+te_data = data
+te_data = te_data[complete.cases(te_data),]
+
+# get means of the 1st grader math scores
+mean_scores = aggregate(g1tmathss~g1tchid+g1classtype+g1schid + g1thighdegree, data = te_data, mean)
+
+# factorize teacher ID and school ID
+mean_scores$g1tchid <- as.factor(mean_scores$g1tchid)
+mean_scores$g1schid <- as.factor(mean_scores$g1schid)
+
+```
+
+# Introduction
+
+Tennessee Student/Teacher Achievement Ratio study (Project STAR) is a four-year longitudinal class-size study with randomized experimental design. Students from 79 schools were randomly assigned to one of three class types: small, regular, regular with aide; while the classroom teachers were also randomly assigned to classes of different types. The information of each student spans over demographic factors, school and class IDs, schools’ and teachers’ information, experimental conditions, test scores, motivation, etc. In this study, we will only work with variables specific to first-grader, in an attempt to answer the following questions:
+
++ Is there a significant difference between teachers’ performance across different class types, if we measure it as the average scaled math scores for the first-graders?
++ Knowing the block design of the experiment, what would be an appropriate model for our purposes? Are the model assumptions satisfied?
++ If the difference is significant, can we interpret it as a causal effect? And if so, under what conditions?
+
+# Statistical Analysis
+
+### Exploratory Data Analysis
+
+Among all 11,601 students, 6,563 of them have complete data of scaled math scores, school IDs, and teacher information in the first grade. 337 classroom teachers from 76 schools were randomly assigned to teach classes of a particular type. Upon primary analysis, the pie chart in Figure \ref{fig:fig3} indicates that the teachers are roughly equally split across the three types.\
+By the experiment design, the number of first-graders for which each teacher is responsible can vary from class to class, resulting in different numbers of scaled math scores. To effectively evaluate the performance, the average values of the scores of all students by each teacher were considered as the performance measure. The teachers' performance measure is roughly bell-shaped (\ref{fig:fig4}). Teachers assigned with small classes appear to perform better on average per box plot (Figure \ref{fig:fig1}), while displaying a wider range than the other two types.\
+Notice teachers are not evenly distributed across the schools and there are also missing math scores for regular with aide type within some schools (Figure \ref{fig:fig5} and Table 3). More than half of the schools had 4 teachers participating in the project, around 30 schools had 5 to 7 teachers, and only 1 school had 12 teachers in the project. Such heterogeneity suggests that further analysis will revolve around unbalanced and incomplete experimental design. 
+
+```{r fig1, fig.margin = TRUE, fig.width=8, fig.height=3, fig.cap="\\label{fig:fig1} Boxplots for mean math scores by class types"}
+# Boxplots for mean math scores by class types
+boxplot(g1tmathss~g1classtype, data=mean_scores,xlab="Class Type",
+        ylab="Mean Math Scores",
+        col="orange",
+        border="brown"
+        )
+```
+  
+### Model Specification
+  For this incomplete, unbalanced experimental design, a multiple linear regression form of two-way ANOVA additive model is adopted. This allows for comparison of the mean scaled math scores of each teacher among three treatment groups, while taking into account the schools as the blocking factor. 
+$$Y_i = \mu + \sum_{k=2}^{3} \gamma_kX_{k,i} + \sum_{j=2}^{76} \rho_jZ_{j,i} + \epsilon_i,\, \forall i=1,\cdots,337,$$
+
+$Y_i$ is the $i$-th teacher's average scaled math scores of first-graders in the class. $\mu$ is the true mean scaled math scores of first-graders in the baseline class type (i.e. small) of the baseline school (i.e. school ID: 112038).\
+If class type $k$ is assigned to the $i$-th teacher, then the indicator variable $X_{k,i} = 1$; otherwise $X_{k,i} = 0$. The corresponding coefficient $\gamma_k$ is the increment of the mean of average scaled math scores for teacher of class type $k$ from that of small class type, where $k=2$ corresponds for regular type and $k=3$ corresponds for regular with aide type. If the $i$-th teacher is in the $j$-th school, then $Z_{j,i}= 1$; otherwise, $Z_{j,i}= 0$. $\rho_j$ represents the increment of the teachers' average scaled math scores overall class types in school $j$ from the baseline school 112038. Lastly, $\epsilon_i$'s are the error terms assumed to follow $N(0,\sigma^2)$ i.i.d.\
+Since we are interested in the overall effect of class type on the teachers’ performance across all schools (i.e. blocks) rather than teachers in any one particular school, it is safe for us to omit the interaction terms in that they only provide information on the increment of the effect of class type from the related schools. To substantiate our claim here, we will test on the interaction terms in the `Hypothesis Tests` section and rigorously examine whether they should be included in the model. 
+
+### Model Estimates
+
+The ANOVA table of our model is reported in Table 1. The estimates of the model coefficients are reported in the appendix for concision/brevity. \
+```{r Model!}
+mod1 = lm(g1tmathss ~ g1classtype + as.factor(g1schid), data = mean_scores)
+aovtable <- car::Anova(mod1,type = 2)
+rownames(aovtable) <-  c('Class Type','Schools','Residuals')
+```
+
+```{r}
+aovtable <- car::Anova(mod1,type = 2)
+rownames(aovtable) <-  c('Class Type','Schools','Residuals')
+options(knitr.kable.NA = '')
+knitr::kable(aovtable,digits = 2,caption = 'ANOVA Table (Type II Sum of Squares)',col.names = c('Sum of Squares','Degree of Freedom','F-value', "P-value" ))
+```
+
+
+### Model Diagnostics
+
+* \textbf{Normality}\
+The histogram of the residuals (Fig. 2 left) is roughly bell-shaped. The Normal Q-Q plot (Fig. 2 middle) shows more probabilities on both tails, implying a heavy-tailed distribution. Since the Shapiro-Wilk test returns a p-value of $0.0001$, we reject the normality assumption although the residuals do not depart severely from being normally distributed.
+  
+* \textbf{Homoscedasticity}\
+Per Figure 2 (right), variance does not seem to differ across different fitted values. More formally, we examine this observation with Levene’s test, where the null hypothesis states the variance is the same for all groups. Since we are not interested in the effect of the blocks (schools) , we limit the test to the class types. The result p-value of $0.45$ implies that we fail to reject the equal variance assumption at the $0.05$ level.
+
+* \textbf{Independence}\
+The design of the experiment implies that the students were randomly assigned to different class types and that each teacher was also randomly assigned a class type within each school. Therefore, we are assured that the error terms are independent of each other. 
+
+```{r fig.cap ='Model Diagnostics',fig.height=3.25, fig.width=9}
+par(mfrow = c(1,3))
+# Model Dianogstics
+hist(mod1$residuals,main ="Histogram of residuals",xlab = "Residuals")
+plot(mod1,which =c(1,2))
+```
+
+# Hypothesis Tests
+
+### The Existence of the Interaction Terms
+To formally study the existence of the interaction between the schools and the class types, we construct a model that includes all the interaction terms, which we use as the full model to perform the following F-test. \
+$H_0: \text{The full model is not different from the reduced model}$ VS. $H_A: \text{The two models are significantly different}$, where the reduced model is the two-way ANOVA model in our analysis. \
+  
+```{r}
+# interaction test
+full_model=lm(g1tmathss~g1classtype+as.factor(g1schid)+g1classtype*as.factor(g1schid),data=mean_scores)
+anova_table2 = anova(mod1,full_model)
+knitr::kable(anova_table2,digits = 2,caption = 'ANOVA Table (Existence of the Interaction Terms)')
+```
+
+We reject $H_0$ if the `anova()` function in $R$ returns a p-value less than $0.05$. 
+Per Table 2 above, p-value is $0.72$. We fail to reject the hypothesis that the two models are not different at the $0.05$ level. No obvious interaction effects exist between the schools and the class types. 
+
+### Nonparametric Tests on the Group Means
+Let $\mu_1$ denote the mean performance, in terms of the average scaled math score, of the teachers in the small classes, $\mu_2$ the mean performance of teachers in regular classes, and $\mu_3$ that of the teachers in regular classes with-aide. 
+To test whether the average performance of the teachers is the same across different class type assignments, we would ideally perform the ANOVA F-test. However, since normality assumption is violated as mentioned above, we resort to nonparametric tests that do not rely on the normality in the error terms. 
+
+* \textbf{Rank Test}\
+$H_0:\mu_1=\mu_2=\mu_3$ VS. $H_A: \text{Not all }\mu_k\text{'s are equal}, \forall k=1,2,3$. 
+Test statistic: $F^*=\frac{MSTR_r}{MSE_r}\stackrel{H_0}{\sim}F(2, 334)$, where $MSTR_r, MSE_r$ are obtained from the model with the rank of the old response variable (i.e. teacher's performance) as the new response variable.
+Reject $H_0$ if $Pr(F^*>F(0.95; 2, 334))<0.05$.
+Since the p-value turns out to be 0.0003, we reject $H_0$ at the $0.05$ level, and conclude that the teachers' average performance of at least one class type is different from others.
+
+* \textbf{Kruskal-Wallis Test}\
+$H_0:\mu_1=\mu_2=\mu_3$ VS. $H_A: \text{Not all }\mu_k\text{'s are equal}, \forall k=1,2,3$. 
+Test statistic: $$H=(N-1)\frac{\sum_{i=1}^3n_i\cdot(\overline{r}_{i\cdot}-\overline{r})^2}{\sum_{i=1}^3\sum_{j=1}^{n_i}(r_{ij}-\overline{r})^2}\stackrel{H_0}{\sim}\chi^2_2,$$
+where $n_i$ is the number of teachers in class type $i$; $r_{ij}$ is the rank (among all observations) of the $j$-th teacher in class type $i$; $N$ is the total number of teachers; $\overline{r}_{i\cdot}=\frac{\sum_{j=1}^{n_i}r_{ij}}{n_i}$ is the average rank of all teachers in class type $i$; and $\overline{r}=\frac{1}{2}(N+1)$ is the average rank of all teachers. Reject $H_0$ if $Pr(\chi^{2}\,^*>\chi^2_2(0.95))<0.05$. Since the p-value is computed to be $0.0003$, we reject $H_0$ at the $0.05$ level, and conclude that the teachers' average performance of at least one class type is different from others.\
+
+Note that we have obtained the same result using both the rank test and the Kruskal-Wallis test, we believe that the significant difference in the teachers' average performance across different class types is consistent, which leads to our following discussion of the post-hoc analysis, i.e. to identify the exact class type(s) different from others.
+
+### Post-hoc Analysis: Multiple Testing 
+Now that we have discovered that some class type displays different average teachers' performance from others, we will conduct further hypothesis tests to detect where the significant difference lies. Similar to above, we will perform multiple testing using two methods to see if the same result persists.\
+Note: In this section, we will use the related $R$ functions that produce p-values directly, hence the statement of the test statistics and their null distributions will be omitted; albeit, the following hypotheses and decision rule hold for both tests:
+$H_0:\mu_i=\mu_j,$ VS. $H_A:\mu_i\neq\mu_j$ $\forall i,j=1,2,3$ and $i\neq j$ 
+Reject $H_0$ if p-value$<0.05$.
+
+* \textbf{Bonferroni’s Procedure}\
+As is reported in Table 4, we reject $H_0: \mu_1=\mu_2$ and $H_0:\mu_1=\mu_3$ at the $0.05$ level since the p-values are smaller than $0.05$. Therefore, the average performance of teachers in small-sized classes is significantly different from those in regular-sized classes and regular-sized classes with the aide. Nonetheless, we do not have evidence against the hypothesis that the average teachers' performance of regular classes is not different from that of regular classes with-aide.
+
+* \textbf{Tukey’s Procedure}\
+Alternatively, we could test the same hypotheses with a Tukey's procedure following the same decision rule as above. P-values are reported in the last column of the Table 5. We reject the null hypothesis at $0.05$ same as above and arrive at identical conclusions to the Bonferroni's procedure.
+
+Therefore, we conclude that the teachers' average performance differs across different class types. In particular, teachers of small classes tend to perform better than those of regular classes and regular classes with-aide, the latter two being statistically indistinguishable, in terms of the average scaled math scores. In the following section, we will investigate the experimental design and examine the assumptions of the causal inference to determine whether this significant difference can be interpreted as a causal effect.
+
+# Discussion
+To determine if causal inference can be drawn on the effect of class type on the scaled math scores, we will examine the following assumptions under the potential outcome framework:
+
+* Stable Unit Treatment Value Assumption (SUTVA)\
+No spillover effect: We believe that the students' math performance solely depended on their effort and classroom learning. Provided students were randomly assigned to the classes, this assumption is likely to hold in that the learning outcome of one class hardly depended on that of another class.
+Same version of treatment: The definition of each class type was clear. Randomization implies that the teachers were homogeneous in all characteristics across class types. Additionally, the teachers taught the same materials.
+
+* Ignorability: This unconfoundedness assumption holds by randomization and full compliance of the treatment assignment on teachers and students.
+
+```{r}
+#Consistency: potential outcome is consistent with the results observed. Standardized exams are monitored strictly.
+#Positivity: Per the report, educational department of the state identified all school district with different school locations across the TN state that met the requirements and invited all school districts to join the experiment.
+
+```
+
+
+
+# Conclusion
+Through our analysis, in terms of the average scaled math scores, we have found that on average, teachers of small classes tend to perform better than those of regular classes and regular classes with-aide, while the latter two are not significantly different. This result is slightly different results from STAR I, where the pairwise test indicated that students’ average scaled math scores were different for all class types. We suspect that this is due to the extent to which the subjects react to the treatment assignment. For instance, students may respond more actively to any change in the classroom setting, while teachers are less sensitive to the subtle difference. Further research is appropriate to uncover the nature of this discrepancy in the treatment effect. 
+Following the investigation on the assumptions of causal inference based on the design of the experiment, we conclude that the effect of class type on the teachers’ performance is indeed causal; that is, small class size causes the teacher to have better average scaled math scores among the students than regular class sizes, whether with or without the aide. 
+As a final note, we have not been able to explore the time series dimension of this data set limited by the time constraint and our knowledge base. Nevertheless, we believe that if we research more on the panel data methods, e.g. fixed effect models, and implement them in future work, we would find more interesting patterns alongside more meaningful results. 
+
+\pagebreak
+
+```{r}
+#normality test
+#shapiro.test(mod1$residuals)
+#Levene's Test for Homoscedasticity across class types
+#eveneTest(g1tmathss~g1classtype, data = mean_scores) # Fail to reject the hypothesis of equal variance 
+```
+
+# Appendix
+
+## Graphs and Tables
+
+```{r fig3, fig.width=6, fig.height=3, fig.cap="\\label{fig:fig3} Proportion of Teachers in Each Class Type"}
+l = mean_scores %>% group_by(g1classtype) %>% tally()
+pie(l$n, labels = l$g1classtype, main = '')
+```
+\pagebreak
+```{r fig4, fig.width=6, fig.height=3, fig.cap="\\label{fig:fig4} Histogram of 1st-Grader Mean Math Score"}
+# Plot histogram of for the 1st Grader Mean Math Scores
+hist(mean_scores$g1tmathss,
+     xlab = "Mean Math Grades",
+     breaks = 50)
+```
+
+```{r fig5, fig.width=3, fig.height=3, fig.cap="\\label{fig:fig5} Frequency Plot: Frequency of Schools by Teacher Count"}
+# Frequency plot to test unbalanced design
+library(dplyr)
+PLOT <- mean_scores %>% group_by(g1schid) %>% tally()
+PLOT_freq = PLOT %>% count(n)
+
+barplot(PLOT_freq$nn, names.arg = PLOT_freq$n, main = '',
+        xlab = 'Number of Teacher Assigned',
+        ylab = 'School Count')
+```
+
+```{r model and anova table}
+#install.packages('car')
+par(mfrow = c(2,2))
+# check design
+designtable <- table(mean_scores$g1schid,mean_scores$g1classtype)[1:4,]
+school <- c('...','...','...')
+designtable1 <- table(mean_scores$g1schid,mean_scores$g1classtype)[54:55,]
+tablebig <- rbind(designtable,school,designtable1,school)
+rownames(tablebig)[c(5,8)]='...'
+colnames(tablebig) = c('Small','Regular','Regular w/ Aide')
+knitr::kable(tablebig, caption = 'Contigency Table of School and Class Size') 
+
+```
+
+```{r}
+t1 = pairwise.t.test(mean_scores$g1tmathss,mean_scores$g1classtype,p.adj = "bonf")
+t2 = t1$p.value
+#install.packages("kableExtra")
+library(knitr)
+library(kableExtra)
+knitr::kable(t2, caption = "Bonferroni's Procedure")
+t3 = TukeyHSD(aov(mod1))$`g1classtype`
+knitr::kable(t3, caption = "Tukey's Procedure")
+
+```
+\pagebreak
+
+## Outputs
+
+```{r}
+shapiro.test(mod1$residuals)
+```
+
+* Rank Test
+
+```{r}
+mean_scores$rank <- rank(mean_scores$g1tmathss)
+summary(aov(rank~g1classtype, data = mean_scores))
+```
+
+* Levene Test
+```{r}
+leveneTest(g1tmathss~g1classtype, data = mean_scores)
+```
+
+* Kruskal-Wallis Test
+```{r}
+kruskal.test(rank~g1classtype, data = mean_scores)
+```
+
+* Raw Output of Linear Regression
+```{r model estimates, fig.cap= 'Raw regression result'}
+aaa <- summary(mod1)
+aaa
+```
+\pagebreak
+
+## Reference
+
+Imai, K. Tingley, D. and Yamamoto, T. (2013) Experimental designs for identifying causal mechanisms. J. R. Statist. Soc., A, 176 Part 1, pp.5-51.
+
+Kruskal; Wallis (1952). "Use of ranks in one-criterion variance analysis". Journal of the American Statistical Association. 47 (260): 583–621. doi:10.1080/01621459.1952.10483441
+
+https://www.r-bloggers.com/r-tutorial-series-two-way-anova-with-unequal-sample-sizes/
+
+https://rtutorialseries.blogspot.com/2011/01/r-tutorial-series-two-way-anova-with.html
+
+http://www.real-statistics.com/two-way-anova/two-factor-anova-with-replication/brown-forsythe-f-test-two-way-anova/
+
+https://stattrek.com/statistics/dictionary.aspx?definition=randomized%20block%20design
+
+https://www.classsizematters.org/wp-content/uploads/2016/09/STAR-Technical-Report-Part-I.pdf
+
+
+# Session Information
+
+```{r}
+print(sessionInfo(), local = FALSE)
+```
+
+
+
+
+
